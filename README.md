@@ -21,3 +21,5 @@ cargo check --workspace
 現段階のserviceはbackend未接続時に`503 backend is not available`を返します。モデルweightsの取得、GPU backendの有効化、実モデルadapterは後続の段階で追加します。通常のCIではモデルを取得しません。
 
 モデル配置を変更する場合は`GANACHE_MODEL_DIR`を指定します。repository rootを明示する場合は`GANACHE_REPO_ROOT`を指定すると、その下の`models/cache`が使われます。
+
+`ganache-models::Registry::verify_local`でモデルとtokenizerの存在・SHA-256を検証できます。registryにハッシュが未記載のbaselineは、ファイルが存在しても`verified = false`です。

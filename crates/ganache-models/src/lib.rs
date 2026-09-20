@@ -5,6 +5,7 @@
 //! of the inference core.
 
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, env, path::PathBuf};
 use thiserror::Error;
 
@@ -25,6 +26,10 @@ pub struct ModelSpec {
     pub tokenizer_file: String,
     pub license: String,
     pub status: String,
+    #[serde(default)]
+    pub sha256: Option<String>,
+    #[serde(default)]
+    pub tokenizer_sha256: Option<String>,
     pub runtime: RuntimeSpec,
 }
 
@@ -42,12 +47,23 @@ pub struct ResolvedModel {
     pub tokenizer_path: PathBuf,
 }
 
+#[derive(Debug, Clone)]
+pub struct LocalVerification {
+    pub model_path: PathBuf,
+    pub tokenizer_path: PathBuf,
+    pub model_sha256: Option<String>,
+    pub tokenizer_sha256: Option<String>,
+    pub verified: bool,
+}
+
 #[derive(Debug, Error)]
 pub enum RegistryError {
     #[error("failed to parse embedded model registry: {0}")]
     Parse(#[from] toml::de::Error),
     #[error("unknown model id: {0}")]
     UnknownModel(String),
+    #[error("failed to read model file {0}: {1}")]
+    Read(PathBuf, String),
 }
 
 impl Registry {
@@ -72,6 +88,39 @@ impl Registry {
             spec,
         })
     }
+
+    pub fn verify_local(&self, id: &str) -> Result<LocalVerification, RegistryError> {
+        let resolved = self.resolve(id)?;
+        let model_sha256 = file_sha256(&resolved.model_path)?;
+        let tokenizer_sha256 = file_sha256(&resolved.tokenizer_path)?;
+        let verified = resolved
+            .spec
+            .sha256
+            .as_deref()
+            .is_some_and(|expected| model_sha256.as_deref() == Some(expected))
+            && resolved
+                .spec
+                .tokenizer_sha256
+                .as_deref()
+                .is_some_and(|expected| tokenizer_sha256.as_deref() == Some(expected));
+        Ok(LocalVerification {
+            model_path: resolved.model_path,
+            tokenizer_path: resolved.tokenizer_path,
+            model_sha256,
+            tokenizer_sha256,
+            verified,
+        })
+    }
+}
+
+fn file_sha256(path: &PathBuf) -> Result<Option<String>, RegistryError> {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(RegistryError::Read(path.clone(), error.to_string())),
+    };
+    let digest = Sha256::digest(bytes);
+    Ok(Some(format!("{digest:x}")))
 }
 
 pub fn cache_root() -> PathBuf {

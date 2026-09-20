@@ -10,6 +10,7 @@ file = "jinen-v1-xsmall-Q5_K_M.gguf"
 tokenizer_file = "tokenizer.json"
 license = "CC-BY-SA-4.0"
 status = "baseline"
+# Add model and tokenizer SHA-256 before marking this profile reproducible.
 
 [models.jinen_v1_xsmall_q5.runtime]
 backend = "auto"
