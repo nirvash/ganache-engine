@@ -47,6 +47,17 @@ local model runtime
 cargo check --workspace
 ```
 
+モデルを配置した状態で、Jinen比較用の同一条件ベンチマークを実行できます。
+
+```powershell
+$env:GANACHE_REPO_ROOT = (Get-Location).Path
+cargo run -p ganache-service --bin ganache-bench
+# CUDA版:
+cargo run -p ganache-service --bin ganache-bench --features cuda
+```
+
+`GANACHE_GPU_LAYERS`、`GANACHE_MAIN_GPU`、`GANACHE_BENCH_SAMPLES`、`GANACHE_BENCH_WARMUPS`で条件を変更できます。ベンチマークは`PredictRequest`を直接実行するため、HTTPやIME UIの待ち時間を含まないbackend比較値です。
+
 現段階の service はモデル weights が未配置なら `503 backend is not available` を返します。registry の Jinen profile は、Ganache の汎用 contract とモデル/backend の比較経路を検証するための最初の adapter です。Jinen backend は渡された prompt を greedy 生成し、JSON を生成できた場合は JSON value、そうでない場合は JSON string として返します。別モデルや別 backend は同じ `InferenceBackend` contract に追加します。schema-constrained decoding、KV cache、追加 backend、モデル weights の取得は後続の段階で追加します。通常の CI ではモデルを取得しません。
 
 Jinen backend を含む Windows ビルドでは Visual Studio 2022 の CMake generator を使います。CUDA 版は `cargo test --workspace --features ganache-service/cuda` など、service 側 feature から有効化します。

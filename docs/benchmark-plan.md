@@ -33,3 +33,5 @@ Rakukanの`jinen-v1-xsmall-q5` CUDA実測値は、MacaronIME task profile の初
 - GPU layers: 0（CPU実行）
 
 これは実モデルをGanache経由で呼べることの確認であり、MacaronIMEの最終task profileの精度・CUDA性能・KV cache性能を示すものではない。次は同じprompt/schemaをCUDA backendで測定する。
+
+同条件の再計測には、`ganache-service` の `ganache-bench` binary を使う。`cargo run -p ganache-service --bin ganache-bench` はCPU、`--features cuda` はCUDAを選択し、model load、warmup、p50/p95/maxを同じ形式で出力する。
