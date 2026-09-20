@@ -1,0 +1,16 @@
+# Model registry only. Model weights are never committed to this repository.
+# Pin revisions and SHA-256 before enabling a model in a reproducible profile.
+
+[models.jinen_v1_xsmall_q5]
+display_name = "Jinen v1 XSmall Q5_K_M"
+provider = "huggingface"
+repo = "togatogah/jinen-v1-xsmall.gguf"
+revision = "main"
+file = "jinen-v1-xsmall-Q5_K_M.gguf"
+tokenizer_file = "tokenizer.json"
+license = "CC-BY-SA-4.0"
+status = "baseline"
+
+[models.jinen_v1_xsmall_q5.runtime]
+backend = "auto"
+recommended_gpu_layers = 16

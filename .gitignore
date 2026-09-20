@@ -1,0 +1,6 @@
+/target/
+/models/cache/
+/models/*.gguf
+/models/*.safetensors
+/models/*.bin
+*.log
