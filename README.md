@@ -7,6 +7,7 @@ Ganache はモデル名を固定せず、モデル・量子化・CUDA/Vulkan/CPU
 ## 初期構成
 
 - `ganache-core`: 推論ライブラリと `/v1/createone` の共有型
+- `ganache-models`: モデルregistryとローカルcache解決（weights取得は行わない）
 - `ganache-service`: `/health` と `/v1/createone` のHTTP実行ラッパー（backend接続前の骨格）
 - `models/models.toml`: モデル取得先・revision・runtime設定
 - `docs/benchmark-plan.md`: モデル比較・精度・遅延の評価方針
