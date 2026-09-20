@@ -8,6 +8,7 @@ Ganache はモデル名を固定せず、モデル・量子化・CUDA/Vulkan/CPU
 
 - `ganache-core`: 推論ライブラリと `/v1/createone` の共有型
 - `ganache-models`: モデルregistryとcheckout内cache解決（weights取得は行わない）
+- `ganache-jinen`: Jinen GGUF adapter（現段階はgreedy 1候補）
 - `ganache-service`: `/health` と `/v1/createone` のHTTP実行ラッパー（backend接続前の骨格）
 - `models/models.toml`: モデル取得先・revision・runtime設定
 - `docs/benchmark-plan.md`: モデル比較・精度・遅延の評価方針
@@ -18,7 +19,9 @@ Ganache はモデル名を固定せず、モデル・量子化・CUDA/Vulkan/CPU
 cargo check --workspace
 ```
 
-現段階のserviceはbackend未接続時に`503 backend is not available`を返します。モデルweightsの取得、GPU backendの有効化、実モデルadapterは後続の段階で追加します。通常のCIではモデルを取得しません。
+現段階のserviceはモデルweightsが未配置なら`503 backend is not available`を返します。Jinenのgreedy adapterは接続済みで、beam search、追加モデルadapter、モデルweightsの取得は後続の段階で追加します。通常のCIではモデルを取得しません。
+
+Jinen adapterを含むWindowsビルドでは、Visual Studio 2022のCMake generatorを使います。CUDA版は`cargo test --workspace --features ganache-service/cuda`など、service側featureから有効化します。
 
 モデル配置を変更する場合は`GANACHE_MODEL_DIR`を指定します。repository rootを明示する場合は`GANACHE_REPO_ROOT`を指定すると、その下の`models/cache`が使われます。
 

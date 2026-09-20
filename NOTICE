@@ -1,0 +1,4 @@
+Ganache Engine includes a selectively adapted romaji conversion component derived
+from the Rakukan project (MIT License), used only for raw-input normalization in
+the Jinen adapter. The original source is maintained in the MacaronIME
+vendor/rakukan reference checkout.

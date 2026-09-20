@@ -7,6 +7,13 @@ license.workspace = true
 [dependencies]
 axum.workspace = true
 ganache-core = { path = "../ganache-core" }
+ganache-jinen = { path = "../ganache-jinen" }
+ganache-models = { path = "../ganache-models" }
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+
+[features]
+default = []
+cuda = ["ganache-jinen/cuda"]
+vulkan = ["ganache-jinen/vulkan"]

@@ -5,10 +5,14 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use ganache_core::{CreateOneRequest, EngineError, InferenceBackend, create_one};
+use ganache_core::{
+    CandidateDistribution, CreateOneRequest, EngineError, InferenceBackend, create_one,
+};
+use ganache_jinen::JinenBackend;
+use ganache_models::Registry;
 use std::sync::Arc;
 
-struct UnavailableBackend;
+struct UnavailableBackend {}
 
 impl InferenceBackend for UnavailableBackend {
     fn name(&self) -> &'static str {
@@ -18,7 +22,7 @@ impl InferenceBackend for UnavailableBackend {
     fn create_one(
         &self,
         _request: &CreateOneRequest,
-    ) -> Result<ganache_core::CandidateDistribution, EngineError> {
+    ) -> Result<CandidateDistribution, EngineError> {
         Err(EngineError::BackendUnavailable)
     }
 }
@@ -26,14 +30,15 @@ impl InferenceBackend for UnavailableBackend {
 #[derive(Clone)]
 struct AppState {
     backend: Arc<dyn InferenceBackend>,
+    model_id: String,
+    ready: bool,
+    reason: Option<String>,
 }
 
 #[tokio::main]
 async fn main() {
     let bind = std::env::var("GANACHE_BIND").unwrap_or_else(|_| "127.0.0.1:39201".into());
-    let state = AppState {
-        backend: Arc::new(UnavailableBackend),
-    };
+    let state = load_state();
     let app = Router::new()
         .route("/health", get(health))
         .route("/v1/createone", post(create_one_handler))
@@ -46,7 +51,64 @@ async fn main() {
 }
 
 async fn health(State(state): State<AppState>) -> impl IntoResponse {
-    Json(serde_json::json!({ "status": "ok", "backend": state.backend.name() }))
+    Json(serde_json::json!({
+        "status": if state.ready { "ok" } else { "degraded" },
+        "backend": state.backend.name(),
+        "model": state.model_id,
+        "reason": state.reason,
+    }))
+}
+
+fn load_state() -> AppState {
+    let model_id =
+        std::env::var("GANACHE_MODEL_ID").unwrap_or_else(|_| "jinen_v1_xsmall_q5".into());
+    let unavailable = |reason: String| AppState {
+        backend: Arc::new(UnavailableBackend {}),
+        model_id: model_id.clone(),
+        ready: false,
+        reason: Some(reason),
+    };
+    let registry = match Registry::embedded() {
+        Ok(registry) => registry,
+        Err(error) => return unavailable(error.to_string()),
+    };
+    let resolved = match registry.resolve(&model_id) {
+        Ok(resolved) => resolved,
+        Err(error) => return unavailable(error.to_string()),
+    };
+    if !resolved.model_path.is_file() || !resolved.tokenizer_path.is_file() {
+        return unavailable(format!(
+            "model files missing: {} and {}",
+            resolved.model_path.display(),
+            resolved.tokenizer_path.display()
+        ));
+    }
+    let gpu_layers = std::env::var("GANACHE_GPU_LAYERS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(if cfg!(feature = "cuda") {
+            resolved.spec.runtime.recommended_gpu_layers
+        } else {
+            0
+        });
+    let main_gpu = std::env::var("GANACHE_MAIN_GPU")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0);
+    match JinenBackend::load(
+        &resolved.model_path,
+        &resolved.tokenizer_path,
+        gpu_layers,
+        main_gpu,
+    ) {
+        Ok(backend) => AppState {
+            backend: Arc::new(backend),
+            model_id,
+            ready: true,
+            reason: None,
+        },
+        Err(error) => unavailable(error.to_string()),
+    }
 }
 
 async fn create_one_handler(
