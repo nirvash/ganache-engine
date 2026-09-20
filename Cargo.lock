@@ -494,6 +494,7 @@ dependencies = [
  "ganache-core",
  "ganache-models",
  "llama-cpp-2",
+ "serde_json",
  "thiserror",
  "tokenizers",
 ]

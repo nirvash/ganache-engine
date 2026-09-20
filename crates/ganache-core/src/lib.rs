@@ -1,54 +1,48 @@
-//! Ganache Engine core contract.
+//! Ganache Engine's model-independent structured prediction contract.
 //!
-//! Model weights and backend implementations are intentionally kept outside
-//! this initial contract crate. The public request/response types are shared
-//! by the standalone library and the HTTP service.
+//! The core deliberately knows nothing about IMEs, languages, candidates, or
+//! a particular model. A client supplies the task prompt, input value, output
+//! schema, and optional session/generation state.
 
 use serde::{Deserialize, Serialize};
-use std::time::Instant;
+use serde_json::Value;
+use std::{collections::BTreeMap, time::Instant};
 use thiserror::Error;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateOneRequest {
-    pub request_id: u64,
-    pub document_id: String,
-    pub composition_id: u64,
-    pub raw_revision: u64,
-    pub document_context: String,
-    pub raw_input: String,
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GenerationParameters {
     #[serde(default)]
-    pub evidence: Vec<Evidence>,
-    pub current_hypothesis: Option<String>,
+    pub max_tokens: Option<u32>,
+    #[serde(default)]
+    pub temperature: Option<f32>,
+    #[serde(default)]
+    pub top_p: Option<f32>,
+    #[serde(default)]
+    pub seed: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Evidence {
-    pub hypothesis: String,
-    pub strength: u8,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Candidate {
-    pub text: String,
-    pub probability: Option<f32>,
-    pub score: Option<f32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CandidateDistribution {
-    pub candidates: Vec<Candidate>,
-    pub other_probability: Option<f32>,
-    pub top1_margin: Option<f32>,
-    pub latency_ms: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateOneResponse {
+pub struct PredictRequest {
     pub request_id: u64,
-    pub document_id: String,
-    pub composition_id: u64,
-    pub raw_revision: u64,
-    pub distribution: CandidateDistribution,
+    #[serde(default)]
+    pub session_id: Option<String>,
+    pub prompt: String,
+    pub input: Value,
+    pub output_schema: Value,
+    #[serde(default)]
+    pub generation: GenerationParameters,
+    #[serde(default)]
+    pub metadata: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PredictResponse {
+    pub request_id: u64,
+    #[serde(default)]
+    pub session_id: Option<String>,
+    pub output: Value,
+    pub latency_ms: u32,
+    pub backend: String,
 }
 
 #[derive(Debug, Error)]
@@ -63,40 +57,34 @@ pub enum EngineError {
 
 pub trait InferenceBackend: Send + Sync {
     fn name(&self) -> &'static str;
-    fn create_one(&self, request: &CreateOneRequest) -> Result<CandidateDistribution, EngineError>;
+    fn predict(&self, request: &PredictRequest) -> Result<Value, EngineError>;
 }
 
-pub fn create_one(
+pub fn predict(
     backend: &dyn InferenceBackend,
-    request: CreateOneRequest,
-) -> Result<CreateOneResponse, EngineError> {
+    request: PredictRequest,
+) -> Result<PredictResponse, EngineError> {
     validate_request(&request)?;
     let started = Instant::now();
-    let mut distribution = backend.create_one(&request)?;
-    distribution.latency_ms = started.elapsed().as_millis().min(u32::MAX as u128) as u32;
-    if distribution.candidates.is_empty() {
-        return Err(EngineError::Inference(
-            "backend returned no candidates".into(),
-        ));
-    }
-    Ok(CreateOneResponse {
+    let output = backend.predict(&request)?;
+    Ok(PredictResponse {
         request_id: request.request_id,
-        document_id: request.document_id,
-        composition_id: request.composition_id,
-        raw_revision: request.raw_revision,
-        distribution,
+        session_id: request.session_id,
+        output,
+        latency_ms: started.elapsed().as_millis().min(u32::MAX as u128) as u32,
+        backend: backend.name().to_owned(),
     })
 }
 
-fn validate_request(request: &CreateOneRequest) -> Result<(), EngineError> {
-    if request.document_id.trim().is_empty() {
-        return Err(EngineError::InvalidRequest("document_id is empty".into()));
+fn validate_request(request: &PredictRequest) -> Result<(), EngineError> {
+    if request.prompt.trim().is_empty() {
+        return Err(EngineError::InvalidRequest("prompt is empty".into()));
     }
-    if request.raw_input.is_empty() {
-        return Err(EngineError::InvalidRequest("raw_input is empty".into()));
+    if request.prompt.chars().count() > 65_536 {
+        return Err(EngineError::InvalidRequest("prompt is too long".into()));
     }
-    if request.raw_input.chars().count() > 256 {
-        return Err(EngineError::InvalidRequest("raw_input is too long".into()));
+    if request.output_schema.is_null() {
+        return Err(EngineError::InvalidRequest("output_schema is null".into()));
     }
     Ok(())
 }
@@ -112,38 +100,29 @@ mod tests {
             "test"
         }
 
-        fn create_one(
-            &self,
-            _request: &CreateOneRequest,
-        ) -> Result<CandidateDistribution, EngineError> {
-            Ok(CandidateDistribution {
-                candidates: vec![Candidate {
-                    text: "テスト".into(),
-                    probability: Some(1.0),
-                    score: None,
-                }],
-                other_probability: Some(0.0),
-                top1_margin: None,
-                latency_ms: 0,
-            })
+        fn predict(&self, request: &PredictRequest) -> Result<Value, EngineError> {
+            Ok(serde_json::json!({
+                "echo": request.input,
+                "ok": true
+            }))
         }
     }
 
     #[test]
-    fn create_one_echoes_request_identity_and_measures_latency() {
-        let request = CreateOneRequest {
+    fn predict_echoes_identity_and_returns_structured_output() {
+        let request = PredictRequest {
             request_id: 7,
-            document_id: "doc".into(),
-            composition_id: 2,
-            raw_revision: 3,
-            document_context: String::new(),
-            raw_input: "nihongo".into(),
-            evidence: vec![],
-            current_hypothesis: None,
+            session_id: Some("session".into()),
+            prompt: "classify this".into(),
+            input: serde_json::json!({"text": "test"}),
+            output_schema: serde_json::json!({"type": "object"}),
+            generation: GenerationParameters::default(),
+            metadata: BTreeMap::new(),
         };
-        let response = create_one(&TestBackend, request).unwrap();
+        let response = predict(&TestBackend, request).unwrap();
         assert_eq!(response.request_id, 7);
-        assert_eq!(response.raw_revision, 3);
-        assert_eq!(response.distribution.candidates[0].text, "テスト");
+        assert_eq!(response.session_id.as_deref(), Some("session"));
+        assert_eq!(response.output["ok"], true);
+        assert_eq!(response.backend, "test");
     }
 }

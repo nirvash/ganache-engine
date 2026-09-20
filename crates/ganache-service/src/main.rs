@@ -5,9 +5,7 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use ganache_core::{
-    CandidateDistribution, CreateOneRequest, EngineError, InferenceBackend, create_one,
-};
+use ganache_core::{EngineError, InferenceBackend, PredictRequest, predict};
 use ganache_jinen::JinenBackend;
 use ganache_models::Registry;
 use std::sync::Arc;
@@ -19,10 +17,7 @@ impl InferenceBackend for UnavailableBackend {
         "unavailable"
     }
 
-    fn create_one(
-        &self,
-        _request: &CreateOneRequest,
-    ) -> Result<CandidateDistribution, EngineError> {
+    fn predict(&self, _request: &PredictRequest) -> Result<serde_json::Value, EngineError> {
         Err(EngineError::BackendUnavailable)
     }
 }
@@ -41,7 +36,7 @@ async fn main() {
     let state = load_state();
     let app = Router::new()
         .route("/health", get(health))
-        .route("/v1/createone", post(create_one_handler))
+        .route("/v1/predict", post(predict_handler))
         .with_state(state);
     let listener = tokio::net::TcpListener::bind(&bind)
         .await
@@ -111,11 +106,11 @@ fn load_state() -> AppState {
     }
 }
 
-async fn create_one_handler(
+async fn predict_handler(
     State(state): State<AppState>,
-    Json(request): Json<CreateOneRequest>,
+    Json(request): Json<PredictRequest>,
 ) -> impl IntoResponse {
-    match create_one(state.backend.as_ref(), request) {
+    match predict(state.backend.as_ref(), request) {
         Ok(response) => (
             StatusCode::OK,
             Json(serde_json::to_value(response).unwrap()),

@@ -9,6 +9,7 @@ ganache-core = { path = "../ganache-core" }
 ganache-models = { path = "../ganache-models" }
 llama-cpp-2.workspace = true
 tokenizers.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 
 [features]

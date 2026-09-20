@@ -1,12 +1,10 @@
-//! Jinen v1 GGUF adapter for Ganache.
+//! Jinen v1 GGUF model backend for Ganache.
 //!
-//! This first adapter intentionally exposes greedy generation only. Candidate
-//! beam search and model-specific scoring will be added after the single
-//! candidate path is benchmarked against the Rakukan baseline.
+//! This adapter knows the model runtime, tokenizer, and generation mechanics.
+//! It does not know IME input, romaji, readings, candidates, or any other
+//! client-domain semantics.
 
-use ganache_core::{
-    Candidate, CandidateDistribution, CreateOneRequest, EngineError, InferenceBackend,
-};
+use ganache_core::{EngineError, InferenceBackend, PredictRequest};
 use llama_cpp_2::{
     context::params::LlamaContextParams,
     llama_backend::LlamaBackend,
@@ -15,26 +13,9 @@ use llama_cpp_2::{
     sampling::LlamaSampler,
     token::LlamaToken,
 };
-use std::{num::NonZeroU32, path::Path, sync::OnceLock, time::Instant};
+use serde_json::Value;
+use std::{num::NonZeroU32, path::Path, sync::OnceLock};
 use tokenizers::Tokenizer;
-
-mod romaji;
-
-#[allow(dead_code)]
-mod kana {
-    pub fn hiragana_to_katakana(text: &str) -> String {
-        text.chars()
-            .map(|ch| match ch {
-                'ぁ'..='ゖ' => char::from_u32(ch as u32 + 0x60).unwrap_or(ch),
-                _ => ch,
-            })
-            .collect()
-    }
-}
-
-const CONTEXT_TOKEN: char = '\u{ee02}';
-const INPUT_START_TOKEN: char = '\u{ee00}';
-const OUTPUT_START_TOKEN: char = '\u{ee01}';
 
 static LLAMA_BACKEND: OnceLock<Result<LlamaBackend, String>> = OnceLock::new();
 
@@ -75,33 +56,6 @@ impl JinenBackend {
             n_ctx: 128,
             max_new_tokens: 64,
         })
-    }
-
-    pub fn build_prompt(context: &str, reading: &str) -> String {
-        let katakana: String = reading
-            .chars()
-            .map(|c| match c {
-                'ぁ'..='ゖ' => char::from_u32(c as u32 + 0x60).unwrap_or(c),
-                _ => c,
-            })
-            .collect();
-        format!("{CONTEXT_TOKEN}{context}{INPUT_START_TOKEN}{katakana}{OUTPUT_START_TOKEN}")
-    }
-
-    fn normalize_reading(raw_input: &str) -> String {
-        if raw_input
-            .chars()
-            .all(|ch| ch.is_ascii() && !ch.is_ascii_digit())
-        {
-            let mut converter = romaji::RomajiConverter::new();
-            for ch in raw_input.chars() {
-                converter.push(ch);
-            }
-            converter.flush();
-            converter.output().to_owned()
-        } else {
-            raw_input.to_owned()
-        }
     }
 
     fn generate(&self, prompt: &str) -> Result<String, EngineError> {
@@ -164,42 +118,14 @@ impl InferenceBackend for JinenBackend {
         "jinen-llama"
     }
 
-    fn create_one(&self, request: &CreateOneRequest) -> Result<CandidateDistribution, EngineError> {
-        let started = Instant::now();
-        let reading = Self::normalize_reading(&request.raw_input);
-        let text = self.generate(&Self::build_prompt(&request.document_context, &reading))?;
+    fn predict(&self, request: &PredictRequest) -> Result<Value, EngineError> {
+        let text = self.generate(&request.prompt)?;
         if text.is_empty() {
-            return Err(EngineError::Inference(
-                "model returned empty candidate".into(),
-            ));
+            return Err(EngineError::Inference("model returned empty output".into()));
         }
-        Ok(CandidateDistribution {
-            candidates: vec![Candidate {
-                text,
-                probability: None,
-                score: None,
-            }],
-            other_probability: None,
-            top1_margin: None,
-            latency_ms: started.elapsed().as_millis().min(u32::MAX as u128) as u32,
-        })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn builds_jinen_prompt_with_katakana_reading() {
-        assert_eq!(
-            JinenBackend::build_prompt("前", "にほんご"),
-            "\u{ee02}前\u{ee00}ニホンゴ\u{ee01}"
-        );
-    }
-
-    #[test]
-    fn normalizes_romaji_before_prompt() {
-        assert_eq!(JinenBackend::normalize_reading("nihongo"), "にほんご");
+        // Until constrained decoding is implemented, preserve arbitrary model
+        // text as a valid JSON value. JSON emitted by the model remains an
+        // object/array so client schemas can consume it directly.
+        Ok(serde_json::from_str(&text).unwrap_or(Value::String(text)))
     }
 }

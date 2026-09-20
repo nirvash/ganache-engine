@@ -1,17 +1,45 @@
 # Ganache Engine
 
-MacaronIME の filling として使う、単独利用可能なモデル推論ライブラリおよび実行ラッパーです。
+低レイテンシな構造化予測を行う、モデル非依存のローカル推論ランタイムです。
 
-Ganache はモデル名を固定せず、モデル・量子化・CUDA/Vulkan/CPU backendを同一のIME評価で比較できることを目的にします。モデルweightsはこのrepositoryのgitignoreされた`models/cache`（または`GANACHE_MODEL_DIR`で指定した場所）に置き、`models/models.toml`で取得先と実行プロファイルを管理します。
+Ganache はアプリケーションの意味論を持ちません。クライアントが `prompt`、`input`、`output_schema`、必要なら `session_id` と生成パラメータを渡し、モデル backend がその task に対する構造化出力を返します。MacaronIME は最初のクライアントにすぎず、Ganache の用途・ドメイン・入力方式を規定しません。
+
+```text
+MacaronIME
+    ↓ task profile: prompt / schema / session / input
+Ganache Engine
+    ↓ model backend
+local model runtime
+```
 
 ## 初期構成
 
-- `ganache-core`: 推論ライブラリと `/v1/createone` の共有型
-- `ganache-models`: モデルregistryとcheckout内cache解決（weights取得は行わない）
-- `ganache-jinen`: Jinen GGUF adapter（現段階はgreedy 1候補）
-- `ganache-service`: `/health` と `/v1/createone` のHTTP実行ラッパー（backend接続前の骨格）
-- `models/models.toml`: モデル取得先・revision・runtime設定
-- `docs/benchmark-plan.md`: モデル比較・精度・遅延の評価方針
+- `ganache-core`: モデル非依存の structured prediction contract
+- `ganache-models`: モデル registry と checkout 内 cache 解決（weights 取得は行わない）
+- `ganache-jinen`: Jinen GGUF model backend（現段階は greedy generation）
+- `ganache-service`: `/health` と `/v1/predict` の HTTP 実行ラッパー
+- `models/models.toml`: モデル取得先・revision・runtime 設定
+- `docs/benchmark-plan.md`: task profile ごとのモデル比較・精度・遅延の評価方針
+
+## API contract
+
+`POST /v1/predict` は次の汎用リクエストを受け取ります。
+
+```json
+{
+  "request_id": 1,
+  "session_id": "optional-session",
+  "prompt": "classify the input",
+  "input": {"text": "..."},
+  "output_schema": {"type": "object"},
+  "generation": {"max_tokens": 64, "temperature": 0.0},
+  "metadata": {}
+}
+```
+
+レスポンスの `output` は schema に従う structured value です。たとえば MacaronIME は task profile 側で `candidates[].text`、`candidates[].reading`、`candidates[].score` を定義できますが、そのフィールドや「候補」という概念は Ganache core の責務ではありません。
+
+同じ contract は、spam 判定、タグ分類、選択肢ランキング、open-set proposal、NPC の次行動選択、UI 操作候補などにも利用できます。
 
 ## 開発
 
@@ -19,10 +47,10 @@ Ganache はモデル名を固定せず、モデル・量子化・CUDA/Vulkan/CPU
 cargo check --workspace
 ```
 
-現段階のserviceはモデルweightsが未配置なら`503 backend is not available`を返します。Jinenのgreedy adapterは接続済みで、beam search、追加モデルadapter、モデルweightsの取得は後続の段階で追加します。通常のCIではモデルを取得しません。
+現段階の service はモデル weights が未配置なら `503 backend is not available` を返します。Jinen backend は渡された prompt を greedy 生成し、JSON を生成できた場合は JSON value、そうでない場合は JSON string として返します。schema-constrained decoding、KV cache、追加 backend、モデル weights の取得は後続の段階で追加します。通常の CI ではモデルを取得しません。
 
-Jinen adapterを含むWindowsビルドでは、Visual Studio 2022のCMake generatorを使います。CUDA版は`cargo test --workspace --features ganache-service/cuda`など、service側featureから有効化します。
+Jinen backend を含む Windows ビルドでは Visual Studio 2022 の CMake generator を使います。CUDA 版は `cargo test --workspace --features ganache-service/cuda` など、service 側 feature から有効化します。
 
-モデル配置を変更する場合は`GANACHE_MODEL_DIR`を指定します。repository rootを明示する場合は`GANACHE_REPO_ROOT`を指定すると、その下の`models/cache`が使われます。
+モデル配置を変更する場合は `GANACHE_MODEL_DIR` を指定します。repository root を明示する場合は `GANACHE_REPO_ROOT` を指定すると、その下の `models/cache` が使われます。
 
-`ganache-models::Registry::verify_local`でモデルとtokenizerの存在・SHA-256を検証できます。registryにハッシュが未記載のbaselineは、ファイルが存在しても`verified = false`です。
+`ganache-models::Registry::verify_local` でモデルと tokenizer の存在・SHA-256 を検証できます。モデル本体は repository に commit しません。
