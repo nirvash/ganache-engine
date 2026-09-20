@@ -16,7 +16,7 @@ local model runtime
 
 - `ganache-core`: モデル非依存の structured prediction contract
 - `ganache-models`: モデル registry と checkout 内 cache 解決（weights 取得は行わない）
-- `ganache-jinen`: Jinen GGUF model backend（現段階は greedy generation）
+- `ganache-jinen`: Jinen GGUF model backend（比較用の最初の adapter、現段階は greedy generation）
 - `ganache-service`: `/health` と `/v1/predict` の HTTP 実行ラッパー
 - `models/models.toml`: モデル取得先・revision・runtime 設定
 - `docs/benchmark-plan.md`: task profile ごとのモデル比較・精度・遅延の評価方針
@@ -47,7 +47,7 @@ local model runtime
 cargo check --workspace
 ```
 
-現段階の service はモデル weights が未配置なら `503 backend is not available` を返します。Jinen backend は渡された prompt を greedy 生成し、JSON を生成できた場合は JSON value、そうでない場合は JSON string として返します。schema-constrained decoding、KV cache、追加 backend、モデル weights の取得は後続の段階で追加します。通常の CI ではモデルを取得しません。
+現段階の service はモデル weights が未配置なら `503 backend is not available` を返します。registry の Jinen profile は、Ganache の汎用 contract とモデル/backend の比較経路を検証するための最初の adapter です。Jinen backend は渡された prompt を greedy 生成し、JSON を生成できた場合は JSON value、そうでない場合は JSON string として返します。別モデルや別 backend は同じ `InferenceBackend` contract に追加します。schema-constrained decoding、KV cache、追加 backend、モデル weights の取得は後続の段階で追加します。通常の CI ではモデルを取得しません。
 
 Jinen backend を含む Windows ビルドでは Visual Studio 2022 の CMake generator を使います。CUDA 版は `cargo test --workspace --features ganache-service/cuda` など、service 側 feature から有効化します。
 

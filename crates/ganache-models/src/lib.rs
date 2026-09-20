@@ -19,6 +19,7 @@ pub struct Registry {
 #[derive(Debug, Clone, Deserialize)]
 pub struct ModelSpec {
     pub display_name: String,
+    pub adapter: String,
     pub provider: String,
     pub repo: String,
     pub revision: String,
@@ -142,6 +143,7 @@ mod tests {
         let registry = Registry::embedded().unwrap();
         let model = registry.get("jinen_v1_xsmall_q5").unwrap();
         assert_eq!(model.provider, "huggingface");
+        assert_eq!(model.adapter, "jinen-llama");
         assert_eq!(model.file, "jinen-v1-xsmall-Q5_K_M.gguf");
     }
 

@@ -71,6 +71,12 @@ fn load_state() -> AppState {
         Ok(resolved) => resolved,
         Err(error) => return unavailable(error.to_string()),
     };
+    if resolved.spec.adapter != "jinen-llama" {
+        return unavailable(format!(
+            "model adapter is not available: {}",
+            resolved.spec.adapter
+        ));
+    }
     if !resolved.model_path.is_file() || !resolved.tokenizer_path.is_file() {
         return unavailable(format!(
             "model files missing: {} and {}",

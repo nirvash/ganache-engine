@@ -73,4 +73,4 @@ MacaronIME は最初の client であり、Ganache の設計上の親ではな�
 4. session 単位の KV cache、cancel、timeout、freshness 制御
 5. CUDA/Vulkan/CPU の backend 選択、resource telemetry、複数 model backend
 
-現在の Jinen adapter は第2段階であり、JSON を生成できた場合はその値、JSON でない場合は文字列 value を返す。これは汎用 contract の疎通用であって、schema 適合を保証する最終実装ではない。
+現在の Jinen adapter は第2段階の比較用実装であり、JSON を生成できた場合はその値、JSON でない場合は文字列 value を返す。これは汎用 contract の疎通とモデル比較用であって、Ganache の標準モデルでも、schema 適合を保証する最終実装でもない。registry の `adapter` が model profile と backend adapter の結び付きを明示する。
