@@ -19,6 +19,12 @@ use tokenizers::Tokenizer;
 
 static LLAMA_BACKEND: OnceLock<Result<LlamaBackend, String>> = OnceLock::new();
 
+// Jinen's model protocol is adapter-specific. These tokens describe the
+// model's prompt framing, not the client's input or output semantics.
+const CONTEXT_TOKEN: char = '\u{ee02}';
+const INPUT_START_TOKEN: char = '\u{ee00}';
+const OUTPUT_START_TOKEN: char = '\u{ee01}';
+
 fn llama_backend() -> Result<&'static LlamaBackend, EngineError> {
     match LLAMA_BACKEND.get_or_init(|| LlamaBackend::init().map_err(|e| e.to_string())) {
         Ok(backend) => Ok(backend),
@@ -48,14 +54,25 @@ impl JinenBackend {
             .with_main_gpu(main_gpu);
         let model = LlamaModel::load_from_file(backend, model_path.as_ref(), &params)
             .map_err(|error| EngineError::Inference(format!("load GGUF: {error}")))?;
-        let tokenizer = Tokenizer::from_file(tokenizer_path.as_ref())
+        let mut tokenizer = Tokenizer::from_file(tokenizer_path.as_ref())
             .map_err(|error| EngineError::Inference(format!("load tokenizer: {error}")))?;
+        // The Hugging Face tokenizer profile is configured for training
+        // batches (padding to 128). Inference must not pad every prompt to
+        // the complete context window.
+        tokenizer.with_padding(None);
+        tokenizer
+            .with_truncation(None)
+            .map_err(|error| EngineError::Inference(format!("configure tokenizer: {error}")))?;
         Ok(Self {
             model,
             tokenizer,
             n_ctx: 128,
             max_new_tokens: 64,
         })
+    }
+
+    fn format_prompt(prompt: &str) -> String {
+        format!("{CONTEXT_TOKEN}{INPUT_START_TOKEN}{prompt}{OUTPUT_START_TOKEN}")
     }
 
     fn generate(&self, prompt: &str) -> Result<String, EngineError> {
@@ -68,10 +85,17 @@ impl JinenBackend {
             .iter()
             .map(|id| LlamaToken(*id as i32))
             .collect();
-        if input.is_empty() || input.len() >= self.n_ctx as usize {
+        if input.is_empty() {
             return Err(EngineError::InvalidRequest(
-                "prompt exceeds context window".into(),
+                "prompt produced no tokens".into(),
             ));
+        }
+        if input.len() >= self.n_ctx as usize {
+            return Err(EngineError::InvalidRequest(format!(
+                "prompt exceeds context window: {} tokens >= {}",
+                input.len(),
+                self.n_ctx
+            )));
         }
         let backend = llama_backend()?;
         let params =
@@ -119,7 +143,7 @@ impl InferenceBackend for JinenBackend {
     }
 
     fn predict(&self, request: &PredictRequest) -> Result<Value, EngineError> {
-        let text = self.generate(&request.prompt)?;
+        let text = self.generate(&Self::format_prompt(&request.prompt))?;
         if text.is_empty() {
             return Err(EngineError::Inference("model returned empty output".into()));
         }
@@ -127,5 +151,18 @@ impl InferenceBackend for JinenBackend {
         // text as a valid JSON value. JSON emitted by the model remains an
         // object/array so client schemas can consume it directly.
         Ok(serde_json::from_str(&text).unwrap_or(Value::String(text)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn formats_model_specific_prompt_protocol_without_client_semantics() {
+        assert_eq!(
+            JinenBackend::format_prompt("ニホンゴ"),
+            "\u{ee02}\u{ee00}ニホンゴ\u{ee01}"
+        );
     }
 }

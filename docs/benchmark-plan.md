@@ -23,3 +23,13 @@
 モデルweightsはcheckout内のgitignore対象`models/cache`に置く。CIや別checkoutで場所を変える場合は`GANACHE_MODEL_DIR`を使う。
 
 Rakukanの`jinen-v1-xsmall-q5` CUDA実測値は、MacaronIME task profile の初期baselineとして記録する。現時点のbaselineは温間10件でp50 24ms、p95 32ms、最大32ms（候補取得完了まで）であり、Ganache の汎用ランタイム全体の性能値ではない。
+
+## 実測記録
+
+2026-09-20時点で、checkout内`models/cache`の`jinen_v1_xsmall_q5`をGanache serviceへロードし、CPU backendで汎用`/v1/predict`を疎通した。task profileは`prompt = ニホンゴ`、`output_schema = string`、`max_tokens = 8`、10回連続実行で、全件`日本語`を返した。
+
+- Ganache計測 latency: p50 8ms、最大9ms
+- HTTP client wall time: p50 13ms、最大67ms（初回の1件を含む）
+- GPU layers: 0（CPU実行）
+
+これは実モデルをGanache経由で呼べることの確認であり、MacaronIMEの最終task profileの精度・CUDA性能・KV cache性能を示すものではない。次は同じprompt/schemaをCUDA backendで測定する。
