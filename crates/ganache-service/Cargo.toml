@@ -5,4 +5,8 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+axum.workspace = true
 ganache-core = { path = "../ganache-core" }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
