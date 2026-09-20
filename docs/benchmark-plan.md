@@ -20,4 +20,6 @@
 - CUDA / Vulkan / CPUを別集計
 - モデル取得先のrevisionとSHA-256を固定
 
+モデルweightsはcheckout内のgitignore対象`models/cache`に置く。CIや別checkoutで場所を変える場合は`GANACHE_MODEL_DIR`を使う。
+
 Rakukanの`jinen-v1-xsmall-q5` CUDA実測値は、初期baselineとして記録する。現時点のbaselineは温間10件でp50 24ms、p95 32ms、最大32ms（候補取得完了まで）である。

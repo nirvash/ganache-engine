@@ -78,13 +78,10 @@ pub fn cache_root() -> PathBuf {
     if let Some(path) = env::var_os("GANACHE_MODEL_DIR") {
         return PathBuf::from(path);
     }
-    if let Some(path) = env::var_os("LOCALAPPDATA") {
-        return PathBuf::from(path).join("ganache").join("models");
+    if let Some(path) = env::var_os("GANACHE_REPO_ROOT") {
+        return PathBuf::from(path).join("models").join("cache");
     }
-    if let Some(path) = env::var_os("XDG_CACHE_HOME") {
-        return PathBuf::from(path).join("ganache").join("models");
-    }
-    PathBuf::from(".ganache").join("models")
+    PathBuf::from("models").join("cache")
 }
 
 #[cfg(test)]
